@@ -12,9 +12,10 @@ Make sure you have clojure properly installed :
 
 Run:
    Server: 1. download/clone this repo
-           2. `lein run 
+           2. In project directory:
+             $lein run 
 
    Client: 1. download/clone client from this repo:
-          
-           2. yarn start
+           2. In project directory:
+              $yarn start
 
