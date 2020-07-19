@@ -1,4 +1,4 @@
-# exceptional-monkeys-game-server
+# Exceptional-monkeys-game-server
 
 Backend of an Online multiplyer game written in Cloure.
 
