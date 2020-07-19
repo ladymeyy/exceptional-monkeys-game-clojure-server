@@ -13,9 +13,10 @@ Make sure you have clojure properly installed :
 Run:
    Server: 1. download/clone this repo
            2. In project directory:
-             $lein run 
+            ``` $lein run ```
 
-   Client: 1. download/clone client from this repo:
+   Client: 1. clone client from this repo: 
+            ```git clone https://github.com/ladymeyy/exceptional-monkeys-game-client.git ```
            2. In project directory:
-              $yarn start
+            ``` $yarn start ```
 
