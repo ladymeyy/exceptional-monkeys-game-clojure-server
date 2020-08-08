@@ -13,62 +13,50 @@
 
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException", "ArithmeticException", "FileNotFoundException", "IndexOutOfBoundsException",
                      "InterruptedException", "ClassNotFoundException", "NoSuchFieldException", "NoSuchMethodException", "RuntimeException"])
-(def collectables (atom []))
-(def players (atom []))
-(def channel-store (atom []))
 
-(defn channel->player [channel] (some #(when (= (:channel %) channel) %) @players))
+(def players (atom {}))
 
-(defn filter-player [channel] (into [] (filter #(not= (:channel %) channel) @players)))
+(defn broadcast-msg [connections msg]
+  (doseq [con connections]
+    (async/send! (key con) (json/generate-string msg {:pretty true}))))
 
-(defn update-player-in-players [player] (reset! players (conj (filter-player (:channel player)) player) ) )
-
-(defn broadcast-msg [chnls msg]
-  (if (vector? chnls)
-    (doseq [ch chnls]
-      (async/send! ch (json/generate-string (into {} (filter #(not= (key %) :channel) msg)) {:pretty true})))
-    (async/send! chnls (json/generate-string (into {} (filter #(not= (key %) :channel) msg)) {:pretty true}))))
-
-(defn move [ch move-x move-y]
-  (let [player (channel->player ch)
+(defn move [con move-x move-y]
+  (let [player (@players con)
         x (+ move-x (:x player))
         y (+ move-y (:y player))]
     (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
-      (broadcast-msg @channel-store (assoc player :collision true)))
+      (broadcast-msg @players (assoc player :collision true)))
     (do
-      (update-player-in-players (assoc player :x x :y y))
-      (broadcast-msg @channel-store (assoc player :x x :y y)))))
+      (swap! players assoc con (assoc player :x x :y y))
+      (broadcast-msg @players (assoc player :x x :y y)))))
 
-(defn handle-incoming-msg [ch msg]
+(defn handle-incoming-msg [con msg]
   (let [parsed-msg (json/parse-string msg keyword)
         {:keys [height width x y] } parsed-msg]
     (cond
-      (and height width) (update-player-in-players (assoc (channel->player ch) :windowH height :windowW width))
-      (and x y) (move ch (Integer/parseInt x) (Integer/parseInt y)))))
+      (and height width) (swap! players assoc con (assoc (@players con) :windowH height :windowW width))
+      (and x y) (move con (Integer/parseInt x) (Integer/parseInt y)))))
 
-(defn remove-player [channel]
-  (broadcast-msg @channel-store (assoc (channel->player channel) :show false))
-  (reset! channel-store (filter #(not= % channel) @channel-store))
-  (reset! players (filter-player channel)))
+(defn remove-player [con]
+  (broadcast-msg @players (assoc (@players con) :show false))
+  (swap! players dissoc con))
 
-(defn add-new-player [ch]
+(defn add-new-player [con]
   (let [new-player {:player? true
                     :id (str (uuid/v1))
                     :x (rand-int 600)
                     :y (rand-int 300)
                     :score 0
                     :show true
-                    :exceptionType "IoException"            ;todo add exceptions
+                    :exceptionType "IoException"
                     :color [(rand-int 256) (rand-int 256) (rand-int 256)]
                     :collision false
-                    :channel ch
                     :windowH 0
                     :windowW 0}]
-    (broadcast-msg ch (assoc new-player :self? true))       ;send player to self
-    (doseq [p @players] (broadcast-msg ch p))               ;send to self existing players
-    (broadcast-msg @channel-store new-player)               ;send new player to all existing players
-    (swap! players conj new-player)                         ;insert new player to players
-    (swap! channel-store conj ch)))                         ;insert to channels list
+    (broadcast-msg (assoc {} con true) (assoc new-player :self? true))       ;send player to self
+    (doseq [p (vals @players)] (broadcast-msg (assoc {} con true) p))               ;send to self existing players
+    (broadcast-msg @players new-player)               ;send new player to all existing players
+    (swap! players assoc con new-player)))                   ;insert new player to players
 
 (def websocket-callbacks
   "WebSocket callback functions"
@@ -85,8 +73,6 @@
 (defn -main [& {:as args}]
   (web/run
     (-> routes
-        ;; wrap the handler with websocket support
-        ;; websocket requests will go to the callbacks, ring requests to the handler
         (web-middleware/wrap-websocket websocket-callbacks))
     (merge {"host" (env :demo-web-host), "port" 8080}
            args)))
