@@ -20,26 +20,31 @@
 (defn broadcast-msg [connections msg]
   (doseq [con connections] (async/send! (key con) (json/generate-string msg {:pretty true}))))
 
-(defn init-ex [] (reset! collectables (zipmap exceptionTypes (repeat {:exception? true :show false :x 0 :y 0}))))
-
 (defn show-rand-ex []
   (future (loop []
             (let [max 600
                   min 60
-                  new-val (assoc {} :exception? true  :show true :x (+ min (rand-int (- max min))) :y (+ min (rand-int (- max min))))
-                  rand-key (key (rand-nth (filter #(not (:show %)) @collectables)))]
-              (do
-                (swap! collectables assoc rand-key new-val)
-                (broadcast-msg @players (conj {:exceptionType rand-key} new-val))))
+                  new-val {:exception? true :show true :exceptionType (rand-nth exceptionTypes) :x (+ min (rand-int (- max min))) :y (+ min (rand-int (- max min)))}]
+              (swap! collectables assoc (str (uuid/v1)) new-val)
+              (broadcast-msg @players new-val))
             (Thread/sleep 5000)
             (recur))))
 
-(defn remove-rand-ex []
-  (future (loop []
-            (let [rand-ex-key (key (rand-nth (filter #(:show %) @collectables)))]
-              (broadcast-msg @players (swap! collectables assoc-in [rand-ex-key :show] false)))
-            (Thread/sleep 5000)
-            (recur))))
+(defn overlap? [playerX playerY exX exY]
+  (cond
+    (or (> playerX (+ 130 exX)) (> exX (+ 100 playerX))) false
+    (or (< (+ playerY 129) exY) (< (+ exY 200) playerY)) false
+    :else true))
+
+(defn collect [player]
+  (let [pred (fn [[k v]] (and (:show v) (= (:exceptionType v) (:exceptionType player)) (overlap? (:x player) (:y player) (:x v) (:y v))))
+        collected (first (filter pred @collectables))]
+    (if (some? collected)
+      (do
+        (swap! collectables dissoc (key collected))
+        (broadcast-msg @players (assoc (val collected) :show false))
+        (assoc player :score (+ 1 (:score player))))
+      player)))
 
 (defn move [con move-x move-y]
   (let [player (@players con)
@@ -48,7 +53,9 @@
     (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
       (broadcast-msg @players (assoc player :collision true))
       (do
-        (swap! players assoc con (assoc player :x x :y y))
+        (->>  (assoc player :x x :y y)
+             (collect)
+             (swap! players assoc con))
         (broadcast-msg @players (assoc player :x x :y y))))))
 
 (defn handle-incoming-msg [con msg]
@@ -92,9 +99,7 @@
            (route/resources "/"))
 
 (defn -main [& {:as args}]
-  (init-ex)
   (show-rand-ex)
-  (remove-rand-ex)
   (web/run
     (-> routes
         (web-middleware/wrap-websocket websocket-callbacks))
