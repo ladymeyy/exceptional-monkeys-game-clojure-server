@@ -17,12 +17,11 @@
 (def collectables (atom {}))
 (def players (atom {}))
 
-(defn broadcast-msg [connections msg]
-  (doseq [con connections] (async/send! (key con) (json/generate-string msg {:pretty true}))))
+(defn broadcast-msg [connections msg] (doseq [con connections] (async/send! (key con) (json/generate-string msg {:pretty true}))))
 
 (defn show-rand-ex []
   (future (loop []
-            (let [max 600
+            (let [max 800
                   min 60
                   new-val {:exception? true :show true :exceptionType (rand-nth exceptionTypes) :x (+ min (rand-int (- max min))) :y (+ min (rand-int (- max min)))}]
               (swap! collectables assoc (str (uuid/v1)) new-val)
@@ -53,7 +52,7 @@
     (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
       (broadcast-msg @players (assoc player :collision true))
       (do
-        (->>  (assoc player :x x :y y)
+        (->> (assoc player :x x :y y)
              (collect)
              (swap! players assoc con))
         (broadcast-msg @players (assoc player :x x :y y))))))
@@ -87,7 +86,6 @@
     (swap! players assoc con new-player)))                   ;insert new player to players
 
 (def websocket-callbacks
-  "WebSocket callback functions"
   {:on-open    add-new-player
    :on-close   (fn [channel {:keys [code reason]}]
                  (remove-player channel)
@@ -103,5 +101,4 @@
   (web/run
     (-> routes
         (web-middleware/wrap-websocket websocket-callbacks))
-    (merge {"host" (env :demo-web-host), "port" 8080}
-           args)))
+    (merge {"host" (env :demo-web-host), "port" 8080} args)))
