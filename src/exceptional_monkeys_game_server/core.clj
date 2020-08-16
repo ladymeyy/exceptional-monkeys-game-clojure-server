@@ -13,17 +13,20 @@
 
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException", "ArithmeticException", "FileNotFoundException", "IndexOutOfBoundsException",
                      "InterruptedException", "ClassNotFoundException", "NoSuchFieldException", "NoSuchMethodException", "RuntimeException"])
-
 (def collectables (atom {}))
 (def players (atom {}))
 
-(defn broadcast-msg [connections msg] (doseq [con connections] (async/send! (key con) (json/generate-string msg {:pretty true}))))
+(defn broadcast-msg [connections msg] (doseq [[con p] connections] (async/send! con (json/generate-string msg {:pretty true}))))
 
 (defn show-rand-ex []
   (future (loop []
             (let [max 800
                   min 60
-                  new-val {:exception? true :show true :exceptionType (rand-nth exceptionTypes) :x (+ min (rand-int (- max min))) :y (+ min (rand-int (- max min)))}]
+                  new-val {:exception? true 
+                           :show true 
+                           :exceptionType (rand-nth exceptionTypes) 
+                           :x (+ min (rand-int (- max min))) 
+                           :y (+ min (rand-int (- max min)))}]
               (swap! collectables assoc (str (uuid/v1)) new-val)
               (broadcast-msg @players new-val))
             (Thread/sleep 5000)
@@ -36,7 +39,9 @@
     :else true))
 
 (defn collect [player]
-  (let [pred (fn [[k v]] (and (:show v) (= (:exceptionType v) (:exceptionType player)) (overlap? (:x player) (:y player) (:x v) (:y v))))
+  (let [pred (fn [[k v]] (and (:show v) 
+                              (= (:exceptionType v) (:exceptionType player))
+                              (overlap? (:x player) (:y player) (:x v) (:y v))))
         collected (first (filter pred @collectables))]
     (if (some? collected)
       (do
@@ -51,22 +56,10 @@
         y (+ move-y (:y player))]
     (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
       (broadcast-msg @players (assoc player :collision true))
-      (do
-        (->> (assoc player :x x :y y)
-             (collect)
-             (swap! players assoc con))
-        (broadcast-msg @players (assoc player :x x :y y))))))
-
-(defn handle-incoming-msg [con msg]
-  (let [parsed-msg (json/parse-string msg keyword)
-        {:keys [height width x y] } parsed-msg]
-    (cond
-      (and height width) (swap! players assoc con (assoc (@players con) :windowH height :windowW width))
-      (and x y) (move con (Integer/parseInt x) (Integer/parseInt y)))))
-
-(defn remove-player [con]
-  (broadcast-msg @players (assoc (@players con) :show false))
-  (swap! players dissoc con))
+      (-> (->> (assoc player :x x :y y)
+               (collect)
+               (swap! players assoc con))
+          (broadcast-msg (assoc player :x x :y y))))))
 
 (defn add-new-player [con]
   (let [new-player {:player? true
@@ -80,10 +73,22 @@
                     :collision false
                     :windowH 0
                     :windowW 0}]
-    (broadcast-msg (assoc {} con true) (assoc new-player :self? true))       ;send player to self
-    (doseq [p (vals @players)] (broadcast-msg (assoc {} con true) p))               ;send to self existing players
-    (broadcast-msg @players new-player)               ;send new player to all existing players
-    (swap! players assoc con new-player)))                   ;insert new player to players
+    (broadcast-msg (assoc {} con true) (assoc new-player :self? true)) ;send player to self
+    (doseq [p (vals @players)] (broadcast-msg (assoc {} con true) p))  ;send to self existing players
+    (broadcast-msg @players new-player)                                ;send new player to all existing players
+    (swap! players assoc con new-player)))                             ;insert new player to players
+
+(defn remove-player [con]
+  (let [player (@players con)]
+    (-> (swap! players dissoc con)
+        (broadcast-msg (assoc player :show false)))))
+
+(defn handle-incoming-msg [con msg]
+  (let [parsed-msg (json/parse-string msg keyword)
+        {:keys [height width x y] } parsed-msg]
+    (cond
+      (and height width) (swap! players assoc con (assoc (@players con) :windowH height :windowW width))
+      (and x y) (move con (Integer/parseInt x) (Integer/parseInt y)))))
 
 (def websocket-callbacks
   {:on-open    add-new-player
@@ -101,4 +106,4 @@
   (web/run
     (-> routes
         (web-middleware/wrap-websocket websocket-callbacks))
-    (merge {"host" (env :demo-web-host), "port" 8080} args)))
+    (merge {"host" (env :demo-web-host), "port" 3030} args)))
