@@ -2,31 +2,48 @@
   (:require
     [clj-uuid :as uuid]
     [cheshire.core :as json]
-    [immutant.web             :as web]
-    [immutant.web.async       :as async]
-    [immutant.web.middleware  :as web-middleware]
-    [compojure.route          :as route]
-    [environ.core             :refer (env)]
-    [compojure.core           :refer (ANY GET defroutes)]
-    [ring.util.response       :refer (response redirect content-type)])
+    [immutant.web :as web]
+    [immutant.web.async :as async]
+    [immutant.web.middleware :as web-middleware]
+    [compojure.route :as route]
+    [environ.core :refer (env)]
+    [compojure.core :refer (ANY GET defroutes)]
+    [ring.util.response :refer (response redirect content-type)])
   (:gen-class))
 
-(def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException", "ArithmeticException", "FileNotFoundException", "IndexOutOfBoundsException",
-                     "InterruptedException", "ClassNotFoundException", "NoSuchFieldException", "NoSuchMethodException", "RuntimeException"])
+(def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException",  "IndexOutOfBoundsException", "InterruptedException", "RuntimeException"])
 (def collectables (atom {}))
 (def players (atom {}))
 
-(defn broadcast-msg [connections msg] (doseq [[con p] connections] (async/send! con (json/generate-string msg {:pretty true}))))
+(defn broadcast-msg [connections msg]
+  (doseq [[con p] connections] (async/send! con (json/generate-string msg {:pretty true}))))
+
+(defn update-game-state
+  ([channel]
+   "Remove player"
+   (let [player (@players channel)]
+     (-> (swap! players dissoc channel)
+         (broadcast-msg (assoc player :show false)))))
+
+  ([plyr channel]
+   "Add new player "
+   (doseq [p (conj (vals @players) (assoc plyr :self? true))] (broadcast-msg (assoc {} channel true) p)) ;send to self existing players
+   (update-game-state plyr channel assoc))
+
+  ([player channel edit-func]
+   "Edit exsiting player values "
+   (-> (swap! players edit-func channel (assoc player :collision false))
+       (broadcast-msg player))))
 
 (defn show-rand-ex []
   (future (loop []
             (let [max 800
                   min 60
-                  new-val {:exception? true 
-                           :show true 
-                           :exceptionType (rand-nth exceptionTypes) 
-                           :x (+ min (rand-int (- max min))) 
-                           :y (+ min (rand-int (- max min)))}]
+                  new-val {:exception?    true
+                           :show          true
+                           :exceptionType (rand-nth exceptionTypes)
+                           :x             (+ min (rand-int (- max min)))
+                           :y             (+ min (rand-int (- max min)))}]
               (swap! collectables assoc (str (uuid/v1)) new-val)
               (broadcast-msg @players new-val))
             (Thread/sleep 5000)
@@ -39,9 +56,7 @@
     :else true))
 
 (defn collect [player]
-  (let [pred (fn [[k v]] (and (:show v) 
-                              (= (:exceptionType v) (:exceptionType player))
-                              (overlap? (:x player) (:y player) (:x v) (:y v))))
+  (let [pred (fn [[k v]] (and (= (:exceptionType v) (:exceptionType player)) (overlap? (:x player) (:y player) (:x v) (:y v))))
         collected (first (filter pred @collectables))]
     (if (some? collected)
       (do
@@ -50,52 +65,38 @@
         (assoc player :score (+ 1 (:score player))))
       player)))
 
-(defn move [con move-x move-y]
-  (let [player (@players con)
-        x (+ move-x (:x player))
-        y (+ move-y (:y player))]
-    (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
-      (broadcast-msg @players (assoc player :collision true))
-      (-> (->> (assoc player :x x :y y)
-               (collect)
-               (swap! players assoc con))
-          (broadcast-msg (assoc player :x x :y y))))))
+(defn move-player [player moveX moveY windowH windowW]
+  (let [x (+ moveX (:x player))
+        y (+ moveY (:y player))]
+    (if (or (< y 0) (< x 0) (>= x windowW) (>= y windowH))
+      (assoc player :collision true :windowW windowW :windowH windowH)
+      (assoc player :x x :y y :windowW windowW :windowH windowH))))
 
-(defn add-new-player [con]
-  (let [new-player {:player? true
-                    :id (str (uuid/v1))
-                    :x (rand-int 600)
-                    :y (rand-int 300)
-                    :score 0
-                    :show true
-                    :exceptionType (rand-nth exceptionTypes)
-                    :color [(rand-int 256) (rand-int 256) (rand-int 256)]
-                    :collision false
-                    :windowH 0
-                    :windowW 0}]
-    (broadcast-msg (assoc {} con true) (assoc new-player :self? true)) ;send player to self
-    (doseq [p (vals @players)] (broadcast-msg (assoc {} con true) p))  ;send to self existing players
-    (broadcast-msg @players new-player)                                ;send new player to all existing players
-    (swap! players assoc con new-player)))                             ;insert new player to players
-
-(defn remove-player [con]
-  (let [player (@players con)]
-    (-> (swap! players dissoc con)
-        (broadcast-msg (assoc player :show false)))))
-
-(defn handle-incoming-msg [con msg]
-  (let [parsed-msg (json/parse-string msg keyword)
-        {:keys [height width x y] } parsed-msg]
-    (cond
-      (and height width) (swap! players assoc con (assoc (@players con) :windowH height :windowW width))
-      (and x y) (move con (Integer/parseInt x) (Integer/parseInt y)))))
+(defn new-player []
+  {:player?       true
+   :id            (str (uuid/v1))
+   :x             (rand-int 600)
+   :y             (rand-int 300)
+   :score         0
+   :show          true
+   :exceptionType (rand-nth exceptionTypes)
+   :color         [(rand-int 256) (rand-int 256) (rand-int 256)]
+   :collision     false
+   :windowH 0
+   :windowW 0})
 
 (def websocket-callbacks
-  {:on-open    add-new-player
+  {:on-open    (fn [channel]
+                 (-> (new-player)
+                     (update-game-state channel)))
    :on-close   (fn [channel {:keys [code reason]}]
-                 (remove-player channel)
+                 (update-game-state channel)
                  (println "close code:" code "reason:" reason))
-   :on-message handle-incoming-msg})
+   :on-message (fn [channel msg]
+                 (let [{:keys [height width x y]} (json/parse-string msg keyword)]
+                   (-> (move-player (@players channel) (Integer/parseInt x) (Integer/parseInt y) height width)
+                       (collect)
+                       (update-game-state channel assoc))))})
 
 (defroutes routes
            (GET "/" {c :context} (redirect (str c "/index.html")))
