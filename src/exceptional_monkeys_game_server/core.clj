@@ -12,7 +12,6 @@
   (:gen-class))
 
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException",  "IndexOutOfBoundsException", "InterruptedException", "RuntimeException"])
-(def collectables (atom {}))
 (def players (atom {}))
 
 (defn broadcast-msg [connections msg]
@@ -34,36 +33,6 @@
    "Edit exsiting player values "
    (-> (swap! players edit-func channel (assoc player :collision false))
        (broadcast-msg player))))
-
-(defn show-rand-ex []
-  (future (loop []
-            (let [max 800
-                  min 60
-                  new-val {:exception?    true
-                           :show          true
-                           :exceptionType (rand-nth exceptionTypes)
-                           :x             (+ min (rand-int (- max min)))
-                           :y             (+ min (rand-int (- max min)))}]
-              (swap! collectables assoc (str (uuid/v1)) new-val)
-              (broadcast-msg @players new-val))
-            (Thread/sleep 5000)
-            (recur))))
-
-(defn overlap? [playerX playerY exX exY]
-  (cond
-    (or (> playerX (+ 130 exX)) (> exX (+ 100 playerX))) false
-    (or (< (+ playerY 129) exY) (< (+ exY 200) playerY)) false
-    :else true))
-
-(defn collect [player]
-  (let [pred (fn [[k v]] (and (= (:exceptionType v) (:exceptionType player)) (overlap? (:x player) (:y player) (:x v) (:y v))))
-        collected (first (filter pred @collectables))]
-    (if (some? collected)
-      (do
-        (swap! collectables dissoc (key collected))
-        (broadcast-msg @players (assoc (val collected) :show false))
-        (assoc player :score (+ 1 (:score player))))
-      player)))
 
 (defn move-player [player moveX moveY windowH windowW]
   (let [x (+ moveX (:x player))
@@ -95,7 +64,6 @@
    :on-message (fn [channel msg]
                  (let [{:keys [height width x y]} (json/parse-string msg keyword)]
                    (-> (move-player (@players channel) (Integer/parseInt x) (Integer/parseInt y) height width)
-                       (collect)
                        (update-game-state channel assoc))))})
 
 (defroutes routes
@@ -103,7 +71,6 @@
            (route/resources "/"))
 
 (defn -main [& {:as args}]
-  (show-rand-ex)
   (web/run
     (-> routes
         (web-middleware/wrap-websocket websocket-callbacks))
