@@ -18,6 +18,10 @@
 (defn broadcast-msg [connections msg]
   (doseq [[con p] connections] (async/send! con (json/generate-string msg {:pretty true}))))
 
+(defn update-collectables-game-state [collected]
+  (swap! collectables dissoc (key collected))
+  (broadcast-msg @players (assoc (val collected) :show false)))
+
 (defn update-game-state
   ([channel]
    "Remove player"
@@ -44,8 +48,8 @@
                            :exceptionType (rand-nth exceptionTypes)
                            :x             (+ min (rand-int (- max min)))
                            :y             (+ min (rand-int (- max min)))}]
-              (swap! collectables assoc (str (uuid/v1)) new-val)
-              (broadcast-msg @players new-val))
+              (swap! collectables assoc (str (uuid/v1)) new-val) ;;TODO extract this
+              (broadcast-msg @players new-val))             ;TODO extract this
             (Thread/sleep 5000)
             (recur))))
 
@@ -56,14 +60,10 @@
     :else true))
 
 (defn collect [player]
-  (let [pred (fn [[k v]] (and (= (:exceptionType v) (:exceptionType player)) (overlap? (:x player) (:y player) (:x v) (:y v))))
+  (let [pred (fn [[k v]] (and (= (:exceptionType v) (:exceptionType player))
+                              (overlap? (:x player) (:y player) (:x v) (:y v))))
         collected (first (filter pred @collectables))]
-    (if (some? collected)
-      (do
-        (swap! collectables dissoc (key collected))
-        (broadcast-msg @players (assoc (val collected) :show false))
-        (assoc player :score (+ 1 (:score player))))
-      player)))
+    collected))
 
 (defn move-player [player moveX moveY windowH windowW]
   (let [x (+ moveX (:x player))
@@ -93,9 +93,13 @@
                  (update-game-state channel)
                  (println "close code:" code "reason:" reason))
    :on-message (fn [channel msg]
-                 (let [{:keys [height width x y]} (json/parse-string msg keyword)]
-                   (-> (move-player (@players channel) (Integer/parseInt x) (Integer/parseInt y) height width)
-                       (collect)
+                 (let [{:keys [height width x y]} (json/parse-string msg keyword)
+                       player (move-player (@players channel) (Integer/parseInt x) (Integer/parseInt y) height width)
+                       collected (collect player)]
+                   (-> (if (some? collected)
+                         (do (update-collectables-game-state collected)
+                             (assoc player :score (+ 1 (:score player))))
+                         player)
                        (update-game-state channel assoc))))})
 
 (defroutes routes
