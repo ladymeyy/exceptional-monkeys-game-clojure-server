@@ -17,10 +17,6 @@
 (defn broadcast-msg [connections msg]
   (doseq [[con p] connections] (async/send! con (json/generate-string msg {:pretty true}))))
 
-(defn update-collectables-game-state [collected]
-  (swap! collectables dissoc (key collected))
-  (broadcast-msg @players (assoc (val collected) :show false)))
-
 (defn update-game-state
   ([channel]
    "Remove player"
