@@ -12,6 +12,7 @@
   (:gen-class))
 
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException",  "IndexOutOfBoundsException", "InterruptedException", "RuntimeException"])
+(def collectables (atom {}))
 (def players (atom {}))
 
 (defn broadcast-msg [connections msg]
@@ -86,6 +87,7 @@
 
 (def websocket-callbacks
   {:on-open    (fn [channel]
+                 (println "Open new connection")
                  (-> (new-player)
                      (update-game-state channel)))
    :on-close   (fn [channel {:keys [code reason]}]
@@ -106,6 +108,7 @@
            (route/resources "/"))
 
 (defn -main [& {:as args}]
+  (show-rand-ex)
   (web/run
     (-> routes
         (web-middleware/wrap-websocket websocket-callbacks))
