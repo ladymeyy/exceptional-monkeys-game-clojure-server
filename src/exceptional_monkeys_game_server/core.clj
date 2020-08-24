@@ -12,7 +12,6 @@
   (:gen-class))
 
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException",  "IndexOutOfBoundsException", "InterruptedException", "RuntimeException"])
-(def collectables (atom {}))
 (def players (atom {}))
 
 (defn broadcast-msg [connections msg]
@@ -107,7 +106,6 @@
            (route/resources "/"))
 
 (defn -main [& {:as args}]
-  (show-rand-ex)
   (web/run
     (-> routes
         (web-middleware/wrap-websocket websocket-callbacks))
