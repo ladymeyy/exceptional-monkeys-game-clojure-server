@@ -10,4 +10,5 @@
                  [environ "1.0.0"]
                  [danlentz/clj-uuid "0.1.7"]
                  [cheshire "5.6.3"]]
+  :main exceptional-monkeys-game-server.core
   :repl-options {:init-ns exceptional-monkeys-game-server.core})
