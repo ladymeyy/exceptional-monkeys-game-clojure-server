@@ -55,7 +55,9 @@
         y (+ moveY (:y player))]
     (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
       (assoc player :collision true)
-      (do (swap! players assoc connection (assoc player :x x :y y)) (assoc player :x x :y y)))))
+      (do
+        (swap! players assoc connection (assoc player :x x :y y)) ;update player in players map
+        (assoc player :x x :y y)))))                        ; return updated player
 
 (defn new-player [windowH windowW]
   {:player?       true
