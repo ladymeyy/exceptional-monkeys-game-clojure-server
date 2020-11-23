@@ -7,6 +7,27 @@
         org.httpkit.server)
   (:gen-class))
 
+;UPDATE PLAYER MAP:
+;player has exp.seq. instead of exp.type
+
+;ADD FUNCTION:
+;add function that generates a random exp.seq. of len 10.
+
+
+;UPDATE GEN-RAND-EX FUNCTION
+;make exp. disappear faster.
+
+;
+;UPDATE COLLISION FUNCTION:
+;- upon collision of player with an exception - check if collided exp matched the first exp. in the exp sequence of the player.
+;	-  if it is not - than add it to the sequence of the player.
+;	- if it is - remove from player seq.
+; if seq of player is empty - send - WIN to all clients --- than clients should close connections.
+
+;TODO
+;add timestamp - var or atom ? being set with first client which connects.
+;server sends timestamp to every new player
+
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException",  "IndexOutOfBoundsException", "InterruptedException", "RuntimeException"])
 (def collectables (atom {}))
 (def players (atom {}))
@@ -30,7 +51,7 @@
                            :y             (+ min (rand-int (- max min)))}]
               (swap! collectables assoc (str (uuid/v1)) new-val)
               (broadcast-msg new-val))
-            (Thread/sleep 5000)
+            (Thread/sleep 1000)
             (recur))))
 
 (defn overlap? [playerX playerY exX exY]
@@ -40,15 +61,15 @@
     :else true))
 
 (defn collect [player connection]
-  (let [pred (fn [[k v]] (and (= (:exceptionType v) (:exceptionType player))
-                              (overlap? (:x player) (:y player) (:x v) (:y v)))) ;calculate if player collected an item.
-        collected (first (filter pred @collectables))]
-    (if (some? collected)
+  (let [pred (fn [[k v]] (overlap? (:x player) (:y player) (:x v) (:y v))) ;check if player collided with an item.
+        collided (first (filter pred @collectables))
+        res (= (:exceptionType (val collided)) (first (:exceptionType player)))]
+    (if res
       (do
-        (update-collectables-game-state collected)  ;if item was collected remove it from items map,
-        (swap! players assoc connection (assoc player :score (+ 1 (:score player)))) ;update player new score in players map
-        (assoc player :score (+ 1 (:score player))))        ; return updated player
-      player)))                                             ; else return input player
+        (update-collectables-game-state collided)  ;if item was collected remove it from items map,
+        (swap! players assoc connection (assoc player :exceptionType (rest (:exceptionType player))) ) ;update player new score in players map
+        (assoc player :exceptionType (rest (:exceptionType player))) )        ; return updated player
+        (assoc player :exceptionType  (conj (:exceptionType player) (:exceptionType (val collided)) ) ))))                                             ; else return input player
 
 (defn move-player [player moveX moveY connection]
   (let [x (+ moveX (:x player))
@@ -59,6 +80,13 @@
         (swap! players assoc connection (assoc player :x x :y y)) ;update player in players map
         (assoc player :x x :y y)))))                        ; return updated player
 
+(defn is-winner [player]
+  (if (empty? (:exceptionType player))
+    (do
+      (broadcast-msg (assoc {} :winner (:id player)))
+      true)
+    false))
+
 (defn new-player [windowH windowW]
   {:player?       true
    :id            (str (uuid/v1))
@@ -66,7 +94,7 @@
    :y             (rand-int 300)
    :score         0
    :show          true
-   :exceptionType (rand-nth exceptionTypes)
+   :exceptionType (take 5 (repeatedly #(rand-nth exceptionTypes))) ;TODO rename this to expSeq
    :color         [(rand-int 256) (rand-int 256) (rand-int 256)]
    :collision     false
    :windowH windowH
@@ -87,7 +115,9 @@
 (defn update-player-state [connection newX newY]
   (-> (move-player (@players connection) (Integer/parseInt newX) (Integer/parseInt newY) connection)
       (collect connection)
-      (broadcast-msg)))
+      (broadcast-msg))
+  ; TODO  add here : (fn [player] (when-not (is-winner player) (broadcast-msg player) ) )
+  )
 
 (defn process-message [connection message]
   (let [json-data (json/parse-string message keyword)]
