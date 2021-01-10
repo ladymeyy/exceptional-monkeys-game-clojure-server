@@ -19,7 +19,7 @@
   (swap! collectables dissoc (key collected))
   (broadcast-msg (assoc (val collected) :show false)))
 
-(defn show-rand-ex []
+(defn generate-rand-exception []
   (future (loop []
             (let [max 800
                   min 60
@@ -104,5 +104,5 @@
   (GET "/" [] ws-handler) )
 
 (defn -main [& {:as args}]
-  (show-rand-ex)
+  (generate-rand-exception)
   (run-server websocket-routes {:port 8080}))
