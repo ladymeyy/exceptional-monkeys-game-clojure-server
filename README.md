@@ -22,3 +22,5 @@ Run:
    2. In project directory:
             ``` $yarn start ```
 
+
+<img width="1103" alt="Screen Shot 2021-01-10 at 17 30 57" src="https://user-images.githubusercontent.com/19207742/104127604-b8163000-536b-11eb-92d9-9077f6223fda.png">
