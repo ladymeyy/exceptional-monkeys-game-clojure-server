@@ -2,6 +2,8 @@
 
 Backend of an Online multiplyer game written in Cloure.
 
+## Requirements
+This is a [Leiningen](https://leiningen.org/) project. 
 
 
 ## Usage
@@ -14,6 +16,7 @@ Run:
    Server:
    1. download/clone this repo
    2. In project directory:
+            ``` $lein deps ```
             ``` $lein run ```
 
    Client: 
