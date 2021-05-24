@@ -22,8 +22,6 @@ Run:
    Client: 
    1. clone client from this repo: 
             ```git clone https://github.com/ladymeyy/exceptional-monkeys-game-client.git ```
-   2. In project directory:
-            ``` $yarn start ```
-
+   2. Follow README in Client project. 
 
 <img width="1103" alt="Screen Shot 2021-01-10 at 17 30 57" src="https://user-images.githubusercontent.com/19207742/104127604-b8163000-536b-11eb-92d9-9077f6223fda.png">
