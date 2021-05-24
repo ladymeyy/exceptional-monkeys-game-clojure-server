@@ -104,5 +104,6 @@
   (GET "/" [] ws-handler) )
 
 (defn -main [& {:as args}]
+  (println "Starting exceptional monkeys server... ")
   (generate-rand-exception)
   (run-server websocket-routes {:port 8080}))
