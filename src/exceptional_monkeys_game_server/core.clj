@@ -5,12 +5,12 @@
   (:use [compojure.core :only [GET]]))
 
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException", "IndexOutOfBoundsException"])
-(def collectables (atom {}))
+(def items (atom {}))
 (def players (atom {}))
 (def playerWidth 0.1)
 (def playerHeight 0.13)
-(def expWidth 0.1)
-(def expHeight 0.05)
+(def itemWidth 0.1)
+(def itemHeight 0.05)
 
 (defn send-msg [connection msg]
   (http-server/send! connection (json/generate-string msg {:pretty true})))
@@ -20,7 +20,7 @@
     (send-msg connection msg)))
 
 (defn remove-collected-item [item]
-  (swap! collectables dissoc (key item))
+  (swap! items dissoc (key item))
   (broadcast-msg (assoc (val item) :show false)))
 
 (defn exceptions-generator []
@@ -31,22 +31,22 @@
                            :x             (rand)
                            :y             (rand)}
                   id (str (uuid/v1))]
-              (swap! collectables assoc id new-val)
+              (swap! items assoc id new-val)
               (broadcast-msg new-val))
             (Thread/sleep 5000)
             (recur))))
 
-(defn collision? [playerX playerY expX expY]
-  (and (< playerX (+ expX expWidth))
-       (> (+ playerX playerWidth) expX)
-       (< playerY (+ expY expHeight))
-       (> (+ playerY playerHeight) expY)))
+(defn collision? [playerX playerY itemX itemY]
+  (and (< playerX (+ itemX itemWidth))
+       (> (+ playerX playerWidth) itemX)
+       (< playerY (+ itemY itemHeight))
+       (> (+ playerY playerHeight) itemY)))
 
 (defn get-collected-item [player]
   (let [pred (fn [[_ v]]
                (and (= (:exceptionType v) (:exceptionType player))
                     (collision? (:x player) (:y player) (:x v) (:y v))))]
-    (first (filter pred @collectables))))
+    (first (filter pred @items))))
 
 (defn update-player-in-map [connection player]
   (swap! players assoc connection player)
@@ -88,7 +88,7 @@
   ;; send all existing players to client
   (doseq [existing-player (vals @players)] (send-msg connection existing-player))
   ;; send to client all existing exceptions
-  (doseq [existing (vals @collectables)] (send-msg connection existing))
+  (doseq [existing (vals @items)] (send-msg connection existing))
   ;; send new player to all existing players
   (broadcast-msg player)
   ;; add player to list.
