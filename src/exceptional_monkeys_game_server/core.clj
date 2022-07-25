@@ -9,7 +9,7 @@
 (def players (atom {}))
 (def playerWidth 0.1)
 (def playerHeight 0.13)
-(def expWidth 0.2)
+(def expWidth 0.1)
 (def expHeight 0.05)
 
 (defn send-msg [connection msg]
@@ -36,15 +36,17 @@
             (Thread/sleep 5000)
             (recur))))
 
-(defn is-player-overlap? [playerX playerY exX exY]
-  (not (and (or (> playerX (+ expWidth exX)) (> exX (+ playerWidth playerX)))
-            (or (< (+ playerY playerHeight) exY) (< (+ exY expHeight) playerY)))))
+(defn collision? [playerX playerY expX expY]
+  (and (< playerX (+ expX expWidth))
+       (> (+ playerX playerWidth) expX)
+       (< playerY (+ expY expHeight))
+       (> (+ playerY playerHeight) expY)))
 
 (defn collect [player connection]
   (let [pred (fn [[_ v]]
                (and (= (:exceptionType v) (:exceptionType player))
                     ;; calculate if player collected an item.
-                    (is-player-overlap? (:x player) (:y player) (:x v) (:y v))))
+                    (collision? (:x player) (:y player) (:x v) (:y v))))
         collected (first (filter pred @collectables))]
     (if (some? collected)
       (do
