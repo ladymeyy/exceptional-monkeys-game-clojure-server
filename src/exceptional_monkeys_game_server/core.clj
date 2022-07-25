@@ -12,6 +12,7 @@
 (def itemWidth 0.1)
 (def itemHeight 0.05)
 
+;; Networking functions
 (defn send-msg [connection msg]
   (http-server/send! connection (json/generate-string msg {:pretty true})))
 
@@ -19,11 +20,13 @@
   (doseq [connection (keys @players)]
     (send-msg connection msg)))
 
+
+;; Handle collectible items
 (defn remove-collected-item [item]
   (swap! items dissoc (key item))
   (broadcast-msg (assoc (val item) :show false)))
 
-(defn exceptions-generator []
+(defn items-generator []
   (future (loop []
             (let [new-val {:exception?    true
                            :show          true
@@ -36,15 +39,16 @@
             (Thread/sleep 5000)
             (recur))))
 
+;; Player management
+(defn update-player-in-map [connection player]
+  (swap! players assoc connection player)
+  player)
+
 (defn collision? [playerX playerY itemX itemY]
   (and (< playerX (+ itemX itemWidth))
        (> (+ playerX playerWidth) itemX)
        (< playerY (+ itemY itemHeight))
        (> (+ playerY playerHeight) itemY)))
-
-(defn update-player-in-map [connection player]
-  (swap! players assoc connection player)
-  player)
 
 (defn collect-item [player connection]
   (let [pred (fn [[_ v]]
@@ -64,7 +68,17 @@
       (assoc player :collision true)
       (update-player-in-map connection (assoc player :x x :y y)))))
 
-(defn get-new-player [ ]
+(defn move-and-collect [connection stepX stepY]
+  (-> (move-player (@players connection) stepX stepY connection)
+      (collect-item connection)
+      (broadcast-msg)))
+
+(defn remove-player [connection]
+  (let [player (@players connection)]
+    (swap! players dissoc connection)
+    (broadcast-msg (assoc player :show false))))
+
+(defn get-new-player []
   {:player?       true
    :id            (str (uuid/v1))
    :x             (rand)
@@ -74,47 +88,33 @@
    :exceptionType (rand-nth exceptionTypes)
    :collision     false})
 
-(defn remove-player [connection]
-  (let [player (@players connection)]
-    (swap! players dissoc connection)
-    (broadcast-msg (assoc player :show false))))
-
 (defn add-new-player [player connection]
-  ;; send self to client
-  (send-msg connection (assoc player :self? true))
-  ;; send all existing players to client
-  (doseq [existing-player (vals @players)] (send-msg connection existing-player))
-  ;; send to client all existing exceptions
-  (doseq [existing (vals @items)] (send-msg connection existing))
-  ;; send new player to all existing players
-  (broadcast-msg player)
-  ;; add player to list.
+  (send-msg connection (assoc player :self? true))          ;; self -> client
+  (doseq [existing-player (vals @players)] (send-msg connection existing-player)) ;; all existing players -> client
+  (doseq [existing (vals @items)] (send-msg connection existing)) ;; all existing exceptions -> client
+  (broadcast-msg player)                                    ;; new player -> all existing players
   (update-player-in-map connection player))
 
-(defn move-and-collect [connection stepX stepY]
-  (-> (move-player (@players connection) stepX stepY connection)
-      (collect-item connection)
-      (broadcast-msg)))
-
-(defn process-message [connection message]
+(defn update-game-state [connection message]
   (let [data (json/parse-string message keyword)]
     (if (contains? @players connection)
       (move-and-collect connection (:stepX data) (:stepY data))
       (add-new-player
         (get-new-player) connection))))
 
+;;Websockets API
 (defn ws-handler [request]
   (http-server/with-channel request channel
                             (http-server/on-close channel (fn [status]
                                                             (println "connection closed:" status)
                                                             (remove-player channel)))
                             (http-server/on-receive channel (fn [data]
-                                                              (process-message channel data)))))
+                                                              (update-game-state channel data)))))
 
 (def websocket-routes
   (GET "/" [] ws-handler))
 
 (defn -main [& {:as args}]
   (println "Starting exceptional monkeys server... ")
-  (exceptions-generator)
+  (items-generator)
   (http-server/run-server websocket-routes {:port 8080}))
