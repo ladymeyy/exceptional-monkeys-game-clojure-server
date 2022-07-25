@@ -42,18 +42,15 @@
        (< playerY (+ itemY itemHeight))
        (> (+ playerY playerHeight) itemY)))
 
-(defn get-collected-item [player]
-  (let [pred (fn [[_ v]]
-               (and (= (:exceptionType v) (:exceptionType player))
-                    (collision? (:x player) (:y player) (:x v) (:y v))))]
-    (first (filter pred @items))))
-
 (defn update-player-in-map [connection player]
   (swap! players assoc connection player)
   player)
 
 (defn collect-item [player connection]
-  (let [collected (get-collected-item player)]
+  (let [pred (fn [[_ v]]
+               (and (= (:exceptionType v) (:exceptionType player))
+                    (collision? (:x player) (:y player) (:x v) (:y v))))
+        collected (first (filter pred @items))]
     (if (some? collected)
       (do
         (remove-collected-item collected)
