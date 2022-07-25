@@ -58,9 +58,9 @@
       ;; else return input player
       player)))
 
-(defn move-player [player moveX moveY connection]
-  (let [x (+ moveX (:x player))
-        y (+ moveY (:y player))]
+(defn move-player [player stepX stepY connection]
+  (let [x (+ stepX (:x player))
+        y (+ stepY (:y player))]
     (if (or (< y 0) (< x 0) (> y 1) (> x 1))
       (assoc player :collision true)
       (do
@@ -97,20 +97,16 @@
   (swap! players assoc connection player))
 
 (defn update-player-state [connection stepX stepY]
-  (-> (move-player (@players connection)
-                   (Float/parseFloat stepX)
-                   (Float/parseFloat stepY)
-                   connection)
+  (-> (move-player (@players connection) stepX stepY connection)
       (collect connection)
       (broadcast-msg)))
 
 (defn process-message [connection message]
   (let [data (json/parse-string message keyword)]
     (if (contains? @players connection)
-      (update-player-state connection (:x data) (:y data))
+      (update-player-state connection (:stepX data) (:stepY data))
       (add-new-player
         (generate-new-player) connection))))
-
 
 (defn ws-handler [request]
   (http-server/with-channel request channel
