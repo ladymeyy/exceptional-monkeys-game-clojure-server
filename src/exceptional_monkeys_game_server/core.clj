@@ -19,11 +19,11 @@
   (doseq [connection (keys @players)]
     (send-msg connection msg)))
 
-(defn update-collectables-game-state [collected]
-  (swap! collectables dissoc (key collected))
-  (broadcast-msg (assoc (val collected) :show false)))
+(defn remove-collected-item [item]
+  (swap! collectables dissoc (key item))
+  (broadcast-msg (assoc (val item) :show false)))
 
-(defn generate-rand-exception []
+(defn exceptions-generator []
   (future (loop []
             (let [new-val {:exception?    true
                            :show          true
@@ -42,22 +42,22 @@
        (< playerY (+ expY expHeight))
        (> (+ playerY playerHeight) expY)))
 
-(defn collect [player connection]
+(defn get-collected-item [player]
   (let [pred (fn [[_ v]]
                (and (= (:exceptionType v) (:exceptionType player))
-                    ;; calculate if player collected an item.
-                    (collision? (:x player) (:y player) (:x v) (:y v))))
-        collected (first (filter pred @collectables))]
+                    (collision? (:x player) (:y player) (:x v) (:y v))))]
+    (first (filter pred @collectables))))
+
+(defn update-player-in-map [connection player]
+  (swap! players assoc connection player)
+  player)
+
+(defn collect-item [player connection]
+  (let [collected (get-collected-item player)]
     (if (some? collected)
       (do
-        ;; if item was collected remove it from items map
-        (update-collectables-game-state collected)
-        ;; update player new score in players map
-        (swap! players assoc connection
-               (assoc player :score (+ 1 (:score player))))
-        ;; return updated player
-        (assoc player :score (+ 1 (:score player))))
-      ;; else return input player
+        (remove-collected-item collected)
+        (update-player-in-map connection (assoc player :score (+ 1 (:score player)))))
       player)))
 
 (defn move-player [player stepX stepY connection]
@@ -65,13 +65,9 @@
         y (+ stepY (:y player))]
     (if (or (< y 0) (< x 0) (> y 1) (> x 1))
       (assoc player :collision true)
-      (do
-        ;; update player in players map
-        (swap! players assoc connection (assoc player :x x :y y))
-        ;; return updated player
-        (assoc player :x x :y y)))))
+      (update-player-in-map connection (assoc player :x x :y y)))))
 
-(defn generate-new-player [ ]
+(defn get-new-player [ ]
   {:player?       true
    :id            (str (uuid/v1))
    :x             (rand)
@@ -96,19 +92,19 @@
   ;; send new player to all existing players
   (broadcast-msg player)
   ;; add player to list.
-  (swap! players assoc connection player))
+  (update-player-in-map connection player))
 
-(defn update-player-state [connection stepX stepY]
+(defn move-and-collect [connection stepX stepY]
   (-> (move-player (@players connection) stepX stepY connection)
-      (collect connection)
+      (collect-item connection)
       (broadcast-msg)))
 
 (defn process-message [connection message]
   (let [data (json/parse-string message keyword)]
     (if (contains? @players connection)
-      (update-player-state connection (:stepX data) (:stepY data))
+      (move-and-collect connection (:stepX data) (:stepY data))
       (add-new-player
-        (generate-new-player) connection))))
+        (get-new-player) connection))))
 
 (defn ws-handler [request]
   (http-server/with-channel request channel
@@ -123,5 +119,5 @@
 
 (defn -main [& {:as args}]
   (println "Starting exceptional monkeys server... ")
-  (generate-rand-exception)
+  (exceptions-generator)
   (http-server/run-server websocket-routes {:port 8080}))
