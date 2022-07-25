@@ -7,6 +7,10 @@
 (def exceptionTypes ["IOException", "DivideByZeroException", "NullPointerException", "IndexOutOfBoundsException"])
 (def collectables (atom {}))
 (def players (atom {}))
+(def playerWidth 0.1)
+(def playerHeight 0.13)
+(def expWidth 0.2)
+(def expHeight 0.05)
 
 (defn send-msg [connection msg]
   (http-server/send! connection (json/generate-string msg {:pretty true})))
@@ -21,13 +25,11 @@
 
 (defn generate-rand-exception []
   (future (loop []
-            (let [max 800
-                  min 60
-                  new-val {:exception?    true
+            (let [new-val {:exception?    true
                            :show          true
                            :exceptionType (rand-nth exceptionTypes)
-                           :x             (+ min (rand-int (- max min)))
-                           :y             (+ min (rand-int (- max min)))}
+                           :x             (rand)
+                           :y             (rand)}
                   id (str (uuid/v1))]
               (swap! collectables assoc id new-val)
               (broadcast-msg new-val))
@@ -35,8 +37,8 @@
             (recur))))
 
 (defn is-player-overlap? [playerX playerY exX exY]
-  (not (and (or (> playerX (+ 130 exX)) (> exX (+ 100 playerX)))
-            (or (< (+ playerY 129) exY) (< (+ exY 200) playerY)))))
+  (not (and (or (> playerX (+ expWidth exX)) (> exX (+ playerWidth playerX)))
+            (or (< (+ playerY playerHeight) exY) (< (+ exY expHeight) playerY)))))
 
 (defn collect [player connection]
   (let [pred (fn [[_ v]]
@@ -59,7 +61,7 @@
 (defn move-player [player moveX moveY connection]
   (let [x (+ moveX (:x player))
         y (+ moveY (:y player))]
-    (if (or (< y 0) (< x 0) (>= x (:windowW player)) (>= y (:windowH player)))
+    (if (or (< y 0) (< x 0) (> y 1) (> x 1))
       (assoc player :collision true)
       (do
         ;; update player in players map
@@ -67,17 +69,15 @@
         ;; return updated player
         (assoc player :x x :y y)))))
 
-(defn generate-new-player [windowH windowW]
+(defn generate-new-player [ ]
   {:player?       true
    :id            (str (uuid/v1))
-   :x             (rand-int 600)
-   :y             (rand-int 300)
+   :x             (rand)
+   :y             (rand)
    :score         0
    :show          true
    :exceptionType (rand-nth exceptionTypes)
-   :collision     false
-   :windowH windowH
-   :windowW windowW})
+   :collision     false})
 
 (defn remove-player [connection]
   (let [player (@players connection)]
@@ -96,10 +96,10 @@
   ;; add player to list.
   (swap! players assoc connection player))
 
-(defn update-player-state [connection newX newY]
+(defn update-player-state [connection stepX stepY]
   (-> (move-player (@players connection)
-                   (Integer/parseInt newX)
-                   (Integer/parseInt newY)
+                   (Float/parseFloat stepX)
+                   (Float/parseFloat stepY)
                    connection)
       (collect connection)
       (broadcast-msg)))
@@ -109,7 +109,7 @@
     (if (contains? @players connection)
       (update-player-state connection (:x data) (:y data))
       (add-new-player
-        (generate-new-player (:height data) (:width data)) connection))))
+        (generate-new-player) connection))))
 
 
 (defn ws-handler [request]
